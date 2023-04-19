@@ -41,6 +41,3 @@ test/.coverage
 test/data/legacy_serialized.pt
 *~
 .idea
-
-#Ignore Wandb
-wandb/
