@@ -436,15 +436,15 @@ class ResnetBlock(nn.Module):
 
 class UnetGenerator(nn.Module):
     def __init__(self, input_channels, output_channels, depth: int, start_filters=64, norm_layer=nn.BatchNorm2d, use_dropout=False):
+        super(UnetGenerator, self).__init__()
+
         if type(norm_layer) == functools.partial:
             use_bias = norm_layer.func == nn.InstanceNorm2d
         else:
             use_bias = norm_layer == nn.InstanceNorm2d
 
-        super(UnetGenerator, self).__init__()
-        # construct unet structure
         self.model = nn.Sequential(
-            nn.Conv2d(input_channels, start_filters, kernel_size=4, stride=2, padding=1, bias=use_bias),
+            nn.Conv2d(input_channels, start_filters, kernel_size=4, stride=2, padding=1, bias=use_bias, padding_mode='replicate'),
             UnetInnerBlock(start_filters, start_filters * 8, depth-1, norm_layer, use_dropout, use_bias),
             UnetUpBlock(start_filters * 2, output_channels, None, False, True),
             nn.Tanh(),
@@ -460,7 +460,8 @@ class UnetUpBlock(nn.Module):
 
         self.model = nn.Sequential(
             nn.LeakyReLU(0.2, True),
-            nn.ConvTranspose2d(in_filters, out_filters, kernel_size=4, stride=2, padding=1, bias=use_bias),
+            nn.Upsample(scale_factor=2, mode='nearest'),
+            nn.Conv2d(in_filters, out_filters, kernel_size=5, stride=1, padding=2, bias=use_bias, padding_mode='replicate')
         )
         if norm_layer != None:
             self.model.append(norm_layer(out_filters))
@@ -477,7 +478,7 @@ class UnetDownBlock(nn.Module):
 
         self.model = nn.Sequential(
             nn.ReLU(True),
-            nn.Conv2d(in_filters, out_filters, kernel_size=4, stride=2, padding=1, bias=use_bias),
+            nn.Conv2d(in_filters, out_filters, kernel_size=4, stride=2, padding=1, bias=use_bias, padding_mode='replicate'),
         )
         if norm_layer != None:
             self.model.append(norm_layer(out_filters))
