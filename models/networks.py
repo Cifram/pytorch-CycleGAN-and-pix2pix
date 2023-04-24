@@ -16,27 +16,6 @@ class Identity(nn.Module):
         return x
 
 
-def get_norm_layer(norm_type='instance'):
-    """Return a normalization layer
-
-    Parameters:
-        norm_type (str) -- the name of the normalization layer: batch | instance | none
-
-    For BatchNorm, we use learnable affine parameters and track running statistics (mean/stddev).
-    For InstanceNorm, we do not use learnable affine parameters. We do not track running statistics.
-    """
-    if norm_type == 'batch':
-        norm_layer = functools.partial(nn.BatchNorm2d, affine=True, track_running_stats=True)
-    elif norm_type == 'instance':
-        norm_layer = functools.partial(nn.InstanceNorm2d, affine=False, track_running_stats=False)
-    elif norm_type == 'none':
-        def norm_layer(x):
-            return Identity()
-    else:
-        raise NotImplementedError('normalization layer [%s] is not found' % norm_type)
-    return norm_layer
-
-
 def get_scheduler(optimizer, opt):
     """Return a learning rate scheduler
 
@@ -87,20 +66,18 @@ def init_net(net, gpu_ids=[]):
     return net
 
 
-def define_G(input_nc, output_nc, ngf, netG, norm='batch', use_dropout=False, init_type='normal', init_gain=0.02, gpu_ids=[]):
-    norm_layer = get_norm_layer(norm_type=norm)
+def define_G(input_nc, output_nc, ngf, netG, use_dropout=False, gpu_ids=[]):
     if netG == 'unet_128':
-        net = UnetGenerator(input_nc, output_nc, 7, ngf, norm_layer=norm_layer, use_dropout=use_dropout)
+        net = UnetGenerator(input_nc, output_nc, 7, ngf, use_dropout=use_dropout)
     elif netG == 'unet_256':
-        net = UnetGenerator(input_nc, output_nc, 8, ngf, norm_layer=norm_layer, use_dropout=use_dropout)
+        net = UnetGenerator(input_nc, output_nc, 8, ngf, use_dropout=use_dropout)
     else:
         raise NotImplementedError('Generator model name [%s] is not recognized' % netG)
     return init_net(net, gpu_ids)
 
 
-def define_D(input_nc, ndf, norm='batch', init_type='normal', init_gain=0.02, gpu_ids=[]):
-    norm_layer = get_norm_layer(norm_type=norm)
-    net = NLayerDiscriminator(input_nc, ndf, layers=3, norm_layer=norm_layer)
+def define_D(input_nc, ndf, gpu_ids=[]):
+    net = NLayerDiscriminator(input_nc, ndf, layers=3)
     return init_net(net, gpu_ids)
 
 
@@ -154,17 +131,11 @@ class WGanLoss:
 
 
 class UnetGenerator(nn.Module):
-    def __init__(self, input_channels, output_channels, depth: int, start_filters=64, norm_layer=nn.BatchNorm2d, use_dropout=False):
+    def __init__(self, input_channels, output_channels, depth: int, start_filters=64, use_dropout=False):
         super(UnetGenerator, self).__init__()
-
-        if type(norm_layer) == functools.partial:
-            use_bias = norm_layer.func == nn.InstanceNorm2d
-        else:
-            use_bias = norm_layer == nn.InstanceNorm2d
-
         self.model = nn.Sequential(
-            nn.Conv2d(input_channels, start_filters, kernel_size=4, stride=2, padding=1, bias=use_bias, padding_mode='replicate'),
-            UnetInnerBlock(start_filters, start_filters * 8, depth-1, norm_layer, use_dropout, use_bias),
+            nn.Conv2d(input_channels, start_filters, kernel_size=4, stride=2, padding=1, bias=False, padding_mode='replicate'),
+            UnetInnerBlock(start_filters, start_filters * 8, depth-1, use_dropout, False),
             UnetUpBlock(start_filters * 2, output_channels, None, False, True),
             nn.Tanh(),
         )
@@ -174,7 +145,7 @@ class UnetGenerator(nn.Module):
 
 
 class UnetUpBlock(nn.Module):
-    def __init__(self, in_filters, out_filters, norm_layer, use_dropout: bool, use_bias: bool):
+    def __init__(self, in_filters: int, out_filters: int, normalization: bool, use_dropout: bool, use_bias: bool):
         super(UnetUpBlock, self).__init__()
 
         self.model = nn.Sequential(
@@ -182,8 +153,8 @@ class UnetUpBlock(nn.Module):
             nn.Upsample(scale_factor=2, mode='nearest'),
             nn.Conv2d(in_filters, out_filters, kernel_size=5, stride=1, padding=2, bias=use_bias, padding_mode='replicate')
         )
-        if norm_layer != None:
-            self.model.append(norm_layer(out_filters))
+        if normalization:
+            self.model.append(nn.BatchNorm2d(out_filters))
         if use_dropout:
             self.model.append(nn.Dropout(0.5))
 
@@ -192,35 +163,35 @@ class UnetUpBlock(nn.Module):
 
 
 class UnetDownBlock(nn.Module):
-    def __init__(self, in_filters, out_filters, norm_layer, use_bias: bool):
+    def __init__(self, in_filters: int, out_filters: int, normalization: bool, use_bias: bool):
         super(UnetDownBlock, self).__init__()
 
         self.model = nn.Sequential(
             nn.LeakyReLU(0.2, True),
             nn.Conv2d(in_filters, out_filters, kernel_size=4, stride=2, padding=1, bias=use_bias, padding_mode='replicate'),
         )
-        if norm_layer != None:
-            self.model.append(norm_layer(out_filters))
+        if normalization:
+            self.model.append(nn.BatchNorm2d(out_filters))
 
     def forward(self, input):
         return self.model(input)
 
 
 class UnetInnerBlock(nn.Module):
-    def __init__(self, filters: int, max_filters: int, depth: int, norm_layer, use_dropout: bool, use_bias: bool):
+    def __init__(self, filters: int, max_filters: int, depth: int, use_dropout: bool, use_bias: bool):
         super(UnetInnerBlock, self).__init__()
         inner_filters = min(filters * 2, max_filters)
 
         if depth == 1:
             self.model = nn.Sequential(
-                UnetDownBlock(filters, inner_filters, None, use_bias),
-                UnetUpBlock(inner_filters, filters, norm_layer, False, use_bias),
+                UnetDownBlock(filters, inner_filters, False, use_bias),
+                UnetUpBlock(inner_filters, filters, True, False, use_bias),
             )
         else:
             self.model = nn.Sequential(
-                UnetDownBlock(filters, inner_filters, norm_layer, use_bias),
-                UnetInnerBlock(inner_filters, max_filters, depth - 1, norm_layer, use_dropout, use_bias),
-                UnetUpBlock(inner_filters * 2, filters, norm_layer, use_dropout and inner_filters == max_filters, use_bias),
+                UnetDownBlock(filters, inner_filters, True, use_bias),
+                UnetInnerBlock(inner_filters, max_filters, depth - 1, use_dropout, use_bias),
+                UnetUpBlock(inner_filters * 2, filters, True, use_dropout and inner_filters == max_filters, use_bias),
             )
 
     def forward(self, input):
@@ -228,13 +199,8 @@ class UnetInnerBlock(nn.Module):
 
 
 class NLayerDiscriminator(nn.Module):
-    def __init__(self, input_channels, start_filters=64, layers=3, norm_layer=nn.BatchNorm2d):
+    def __init__(self, input_channels, start_filters=64, layers=3):
         super(NLayerDiscriminator, self).__init__()
-        if type(norm_layer) == functools.partial:  # no need to use bias as BatchNorm2d has affine parameters
-            use_bias = norm_layer.func == nn.InstanceNorm2d
-        else:
-            use_bias = norm_layer == nn.InstanceNorm2d
-
         sequence = [nn.Conv2d(input_channels, start_filters, kernel_size=4, stride=2, padding=1), nn.LeakyReLU(0.2, True)]
         filters = start_filters
         max_filters = start_filters * 8
@@ -242,8 +208,8 @@ class NLayerDiscriminator(nn.Module):
             next_filters = min(filters * 2, max_filters)
             final = n == layers - 1
             sequence += [
-                nn.Conv2d(filters, next_filters, kernel_size=4, stride=1 if final else 2, padding=1, bias=use_bias),
-                norm_layer(next_filters),
+                nn.Conv2d(filters, next_filters, kernel_size=4, stride=1 if final else 2, padding=1, bias=False),
+                nn.BatchNorm2d(next_filters),
                 nn.LeakyReLU(0.2, True)
             ]
             filters = next_filters
