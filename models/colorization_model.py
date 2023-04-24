@@ -63,6 +63,6 @@ class ColorizationModel(Pix2PixModel):
         return rgb
 
     def compute_visuals(self):
-        """Calculate additional output images for visdom and HTML visualization"""
+        """Calculate additional output images for HTML visualization"""
         self.real_B_rgb = self.lab2rgb(self.real_A, self.real_B)
         self.fake_B_rgb = self.lab2rgb(self.real_A, self.fake_B)

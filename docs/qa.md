@@ -4,16 +4,6 @@ Before you post a new question, please first look at the following Q & A and exi
 #### Connection Error:HTTPConnectionPool ([#230](https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix/issues/230), [#24](https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix/issues/24), [#38](https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix/issues/38))
 Similar error messages include “Failed to establish a new connection/Connection refused”.
 
-Please start the visdom server before starting the training:
-```bash
-python -m visdom.server
-```
-To install the visdom, you can use the following command:
-```bash
-pip install visdom
-```
-You can also disable the visdom by setting `--display_id 0`.
-
 #### My PyTorch errors on CUDA related code.
 Try to run the following code snippet to make sure that CUDA is working (assuming using PyTorch >= 0.4):
 ```python
@@ -47,7 +37,7 @@ The current code only supports RGB and grayscale images. If you would like to tr
 - change the parameters `--input_nc` and `--output_nc` to the number of channels in your input/output images.
 - Write your own custom data loader (It is easy as long as you know how to load your data with python). If you write a new data loader class, you need to change the flag `--dataset_mode` accordingly. Alternatively, you can modify the existing data loader. For aligned datasets, change this [line](https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix/blob/master/data/aligned_dataset.py#L41); For unaligned datasets, change these two [lines](https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix/blob/master/data/unaligned_dataset.py#L57).
 
-- If you use visdom and HTML to visualize the results, you may also need to change the visualization code.
+- If you use HTML to visualize the results, you may also need to change the visualization code.
 
 #### Multi-GPU Training ([#327](https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix/issues/327), [#292](https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix/issues/292), [#137](https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix/issues/137), [#35](https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix/issues/35))
 You can use Multi-GPU training by setting `--gpu_ids` (e.g., `--gpu_ids 0,1,2,3` for the first four GPUs on your machine.) To fully utilize all the GPUs, you need to increase your batch size. Try `--batch_size 4`, `--batch_size 16`, or even a larger batch_size. Each GPU will process batch_size/#GPUs images. The optimal batch size depends on the number of GPUs you have, GPU memory per GPU, and the resolution of your training images.

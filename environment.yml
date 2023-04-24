@@ -12,4 +12,3 @@ dependencies:
   - torchvision==0.9.1
   - Pillow==8.0.1
   - numpy==1.19.2
-  - visdom==0.1.8

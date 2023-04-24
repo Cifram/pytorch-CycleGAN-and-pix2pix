@@ -15,7 +15,7 @@ We provide both Dockerfile and pre-built Docker container that can run this code
 docker pull taesungp/pytorch-cyclegan-and-pix2pix
 ```
 
-- Start an interactive docker session. `-p 8097:8097` option is needed if you want to run `visdom` server on the Docker container.
+- Start an interactive docker session.
 
 ```bash
 nvidia-docker run -it -p 8097:8097  taesungp/pytorch-cyclegan-and-pix2pix
@@ -25,7 +25,6 @@ nvidia-docker run -it -p 8097:8097  taesungp/pytorch-cyclegan-and-pix2pix
 ```bash
 cd /workspace/pytorch-CycleGAN-and-pix2pix
 bash datasets/download_pix2pix_dataset.sh facades
-python -m visdom.server &
 bash scripts/train_pix2pix.sh
 ```
 

@@ -93,7 +93,7 @@ git clone https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix
 cd pytorch-CycleGAN-and-pix2pix
 ```
 
-- Instale [PyTorch](http://pytorch.org) 0.4+ y sus otras dependencias (e.g., torchvision, [visdom](https://github.com/facebookresearch/visdom) y [dominate](https://github.com/Knio/dominate)).
+- Instale [PyTorch](http://pytorch.org) 0.4+ y sus otras dependencias (e.g., torchvision y [dominate](https://github.com/Knio/dominate)).
   - Para uso de pip, por favor escriba el comando `pip install -r requirements.txt`.
   - Para uso de Conda, proporcionamos un script de instalación `./scripts/conda_deps.sh`. De forma alterna, puede crear un nuevo entorno Conda usando `conda env create -f environment.yml`.
   - Para uso de Docker, Proporcionamos la imagen Docker y el archivo Docker preconstruidos. Por favor, consulte nuestra página
@@ -104,8 +104,6 @@ cd pytorch-CycleGAN-and-pix2pix
 ```bash
 bash ./datasets/download_cyclegan_dataset.sh maps
 ```
-- Para ver los resultados del entrenamiento y las gráficas de pérdidas, `python -m visdom.server` y haga clic en la URL
- http://localhost:8097.
 - Entrenar el modelo:
 ```bash
 #!./scripts/train_cyclegan.sh
@@ -124,7 +122,6 @@ python test.py --dataroot ./datasets/maps --name maps_cyclegan --model cycle_gan
 ```bash
 bash ./datasets/download_pix2pix_dataset.sh facades
 ```
-- Para ver los resultados del entrenamiento y las gráficas de pérdidas `python -m visdom.server`, haga clic en la URL http://localhost:8097.
 - Para entrenar el modelo:
 ```bash
 #!./scripts/train_pix2pix.sh
