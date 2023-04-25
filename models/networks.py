@@ -68,9 +68,9 @@ def init_net(net, gpu_ids=[]):
 
 def define_G(input_nc, output_nc, ngf, netG, use_dropout=False, gpu_ids=[]):
     if netG == 'unet_128':
-        net = UnetGenerator(input_nc, output_nc, 7, ngf, use_dropout=use_dropout)
+        net = UNet(input_nc, output_nc, 7, ngf, dropout=use_dropout)
     elif netG == 'unet_256':
-        net = UnetGenerator(input_nc, output_nc, 8, ngf, use_dropout=use_dropout)
+        net = UNet(input_nc, output_nc, 8, ngf, dropout=use_dropout)
     else:
         raise NotImplementedError('Generator model name [%s] is not recognized' % netG)
     return init_net(net, gpu_ids)
@@ -130,71 +130,68 @@ class WGanLoss:
                 param.data.clamp_(-0.01, 0.01)
 
 
-class UnetGenerator(nn.Module):
-    def __init__(self, input_channels, output_channels, depth: int, start_filters=64, use_dropout=False):
-        super(UnetGenerator, self).__init__()
+class UNet(nn.Module):
+    def __init__(self, in_channels: int, out_channels: int, depth: int, start_filters: int, dropout: bool = True) -> None:
+        super().__init__()
         self.model = nn.Sequential(
-            nn.Conv2d(input_channels, start_filters, kernel_size=4, stride=2, padding=1, bias=False, padding_mode='replicate'),
-            UnetInnerBlock(start_filters, start_filters * 8, depth-1, use_dropout, False),
-            UnetUpBlock(start_filters * 2, output_channels, None, False, True),
+            nn.Conv2d(in_channels, start_filters, kernel_size=4, stride=2, padding=1, bias=False, padding_mode='replicate'),
+            InnerUNet(start_filters, start_filters*8, depth-1, dropout),
+            UpConv(start_filters*2, out_channels, normalize=False, dropout=False, use_bias=True),
             nn.Tanh(),
         )
 
-    def forward(self, input):
+    def forward(self, input: Tensor) -> Tensor:
         return self.model(input)
 
 
-class UnetUpBlock(nn.Module):
-    def __init__(self, in_filters: int, out_filters: int, normalization: bool, use_dropout: bool, use_bias: bool):
-        super(UnetUpBlock, self).__init__()
-
+class UpConv(nn.Module):
+    def __init__(self, in_filters: int, out_filters: int, normalize: bool = True, dropout: bool = True, use_bias: bool = False) -> None:
+        super().__init__()
         self.model = nn.Sequential(
             nn.ReLU(True),
-            nn.Upsample(scale_factor=2, mode='nearest'),
-            nn.Conv2d(in_filters, out_filters, kernel_size=5, stride=1, padding=2, bias=use_bias, padding_mode='replicate')
+            nn.Upsample(scale_factor=2),
+            nn.Conv2d(in_filters, out_filters, kernel_size=5, stride=1, padding=2, bias=use_bias, padding_mode='replicate'),
         )
-        if normalization:
+        if normalize:
             self.model.append(nn.BatchNorm2d(out_filters))
-        if use_dropout:
+        if dropout:
             self.model.append(nn.Dropout(0.5))
 
-    def forward(self, input):
+    def forward(self, input: Tensor) -> Tensor:
         return self.model(input)
 
 
-class UnetDownBlock(nn.Module):
-    def __init__(self, in_filters: int, out_filters: int, normalization: bool, use_bias: bool):
-        super(UnetDownBlock, self).__init__()
-
+class DownConv(nn.Module):
+    def __init__(self, in_filters: int, out_filters: int, normalize: bool = True) -> None:
+        super().__init__()
         self.model = nn.Sequential(
             nn.LeakyReLU(0.2, True),
-            nn.Conv2d(in_filters, out_filters, kernel_size=4, stride=2, padding=1, bias=use_bias, padding_mode='replicate'),
+            nn.Conv2d(in_filters, out_filters, kernel_size=4, stride=2, padding=1, bias=False, padding_mode='replicate'),
         )
-        if normalization:
+        if normalize:
             self.model.append(nn.BatchNorm2d(out_filters))
 
-    def forward(self, input):
+    def forward(self, input: Tensor) -> Tensor:
         return self.model(input)
 
 
-class UnetInnerBlock(nn.Module):
-    def __init__(self, filters: int, max_filters: int, depth: int, use_dropout: bool, use_bias: bool):
-        super(UnetInnerBlock, self).__init__()
-        inner_filters = min(filters * 2, max_filters)
-
+class InnerUNet(nn.Module):
+    def __init__(self, filters: int, max_filters: int, depth: int, dropout: bool) -> None:
+        super().__init__()
+        inner_filters = min(filters*2, max_filters)
         if depth == 1:
             self.model = nn.Sequential(
-                UnetDownBlock(filters, inner_filters, False, use_bias),
-                UnetUpBlock(inner_filters, filters, True, False, use_bias),
+                DownConv(filters, inner_filters, normalize=False),
+                UpConv(inner_filters, filters, dropout=False),
             )
         else:
             self.model = nn.Sequential(
-                UnetDownBlock(filters, inner_filters, True, use_bias),
-                UnetInnerBlock(inner_filters, max_filters, depth - 1, use_dropout, use_bias),
-                UnetUpBlock(inner_filters * 2, filters, True, use_dropout and inner_filters == max_filters, use_bias),
+                DownConv(filters, inner_filters),
+                InnerUNet(inner_filters, max_filters, depth-1, dropout=dropout),
+                UpConv(inner_filters*2, filters, dropout=dropout and inner_filters == max_filters),
             )
 
-    def forward(self, input):
+    def forward(self, input: Tensor) -> Tensor:
         return torch.cat([input, self.model(input)], 1)
 
 
