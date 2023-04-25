@@ -1,5 +1,8 @@
+import os
+import numpy as np
 import torch
 from torch import Tensor
+import cv2
 from .base_model import BaseModel
 from . import networks
 
@@ -14,13 +17,15 @@ class Pix2PixModel(BaseModel):
     pix2pix paper: https://arxiv.org/pdf/1611.07004.pdf
     """
 
-    def __init__(self, opt):
+    def __init__(self, opt, val_dataloader):
         """Initialize the pix2pix class.
 
         Parameters:
             opt (Option class)-- stores all the experiment flags; needs to be a subclass of BaseOptions
         """
         BaseModel.__init__(self, opt)
+        self.val_dataloader = val_dataloader
+        self.output_dir = os.path.join(opt.checkpoints_dir, opt.name, 'output')
         # specify the training losses you want to print out. The training/test scripts will call <BaseModel.get_current_losses>
         self.loss_names = ['G_GAN', 'G_L1', 'D_real', 'D_fake']
         # specify the images you want to save/display. The training/test scripts will call <BaseModel.get_current_visuals>
@@ -98,3 +103,39 @@ class Pix2PixModel(BaseModel):
         self.forward()
         self.update_discriminator(self.fake_B, self.real_A, self.real_B)
         self.update_generator(self.fake_B, self.real_A, self.real_B)
+
+    def generate_and_save(self, epoch: int) -> None:
+        was_training = self.netG.training
+        self.netG.eval()
+        with torch.no_grad():
+            for (i, data) in enumerate(self.val_dataloader):
+                input = data['A'].to(self.device)
+                target = data['B'].to(self.device)
+
+                pred = self.netG(input).cpu().numpy()
+                pred = np.squeeze(pred)
+                pred = pred * 0.5 + 0.5
+                pred = np.clip(pred, 0, 1)
+                pred = np.transpose(pred, [1, 2, 0])
+
+                input = input.cpu().numpy()
+                input = np.squeeze(input)
+                input = input * 0.5 + 0.5
+                input = np.transpose(input, [1, 2, 0])
+
+                target = target.cpu().numpy()
+                target = np.squeeze(target)
+                target = target * 0.5 + 0.5
+                target = np.transpose(target, [1, 2, 0])
+
+                error = np.abs(pred - target)
+
+                output1 = np.concatenate((input, target), axis=1)
+                output2 = np.concatenate((pred, error), axis=1)
+                output = np.concatenate((output1, output2), axis=0)
+                output = (output * (2**16-1)).astype(np.uint16)
+                output = np.concatenate((output[:, :, 2:3], output[:, :, 1:2], output[:, :, 0:1]), axis=2)
+                if os.path.exists(self.output_dir) == False:
+                    os.mkdir(self.output_dir)
+                cv2.imwrite(f"{self.output_dir}/epoch_{epoch+1}_{i+1}.png", output)
+        self.netG.train(was_training)

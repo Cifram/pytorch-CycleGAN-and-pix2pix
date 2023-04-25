@@ -11,7 +11,7 @@ Now you can use the dataset class by specifying flag '--dataset_mode dummy'.
 See our template dataset class 'template_dataset.py' for more details.
 """
 import importlib
-import torch.utils.data
+from torch.utils.data import DataLoader, random_split
 from data.base_dataset import BaseDataset
 
 
@@ -44,7 +44,7 @@ def get_option_setter(dataset_name):
     return dataset_class.modify_commandline_options
 
 
-def create_dataset(opt):
+def create_dataset(opt) -> tuple[DataLoader, DataLoader]:
     """Create a dataset given the option.
 
     This function wraps the class CustomDatasetDataLoader.
@@ -56,9 +56,9 @@ def create_dataset(opt):
     """
     dataset_class = find_dataset_using_name(opt.dataset_mode)
     dataset = dataset_class(opt)
+    [train_data, validation_data] = random_split(dataset, [len(dataset) - 8, 8])
     print("dataset [%s] was created" % type(dataset).__name__)
-    return torch.utils.data.DataLoader(
-        dataset,
-        batch_size=opt.batch_size,
-        shuffle=not opt.serial_batches,
-        num_workers=int(opt.num_threads))
+    return (
+        DataLoader(train_data, batch_size=opt.batch_size, shuffle=not opt.serial_batches),
+        DataLoader(validation_data, batch_size=1, shuffle=False),
+    )
