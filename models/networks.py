@@ -77,7 +77,7 @@ def define_G(input_nc, output_nc, ngf, netG, use_dropout=False, gpu_ids=[]):
 
 
 def define_D(input_nc, ndf, gpu_ids=[]):
-    net = NLayerDiscriminator(input_nc, ndf, layers=3)
+    net = PatchGAN(input_nc, ndf, layers=3)
     return init_net(net, gpu_ids)
 
 
@@ -195,10 +195,11 @@ class InnerUNet(nn.Module):
         return torch.cat([input, self.model(input)], 1)
 
 
-class NLayerDiscriminator(nn.Module):
-    def __init__(self, input_channels, start_filters=64, layers=3):
-        super(NLayerDiscriminator, self).__init__()
-        sequence = [nn.Conv2d(input_channels, start_filters, kernel_size=4, stride=2, padding=1), nn.LeakyReLU(0.2, True)]
+class PatchGAN(nn.Module):
+    def __init__(self, in_channels: int, start_filters: int, layers: int=3) -> None:
+        super().__init__()
+
+        sequence = [nn.Conv2d(in_channels, start_filters, kernel_size=4, stride=2, padding=1), nn.LeakyReLU(0.2, True)]
         filters = start_filters
         max_filters = start_filters * 8
         for n in range(0, layers):  # gradually increase the number of filters
