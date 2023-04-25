@@ -57,28 +57,34 @@ def init_weights(net):
     net.apply(init_weights)  # apply the initialization function <init_func>
 
 
-def init_net(net, gpu_ids=[]):
-    if len(gpu_ids) > 0:
-        assert(torch.cuda.is_available())
-        net.to(gpu_ids[0])
-        net = torch.nn.DataParallel(net, gpu_ids)  # multi-GPUs
-    init_weights(net)
+def init_net(net):
+    if torch.cuda.is_available():
+        net.to('cuda')
+
+    def init_weights(m: nn.Module) -> None:
+        if isinstance(m, nn.Conv2d) or isinstance(m, nn.ConvTranspose2d) or isinstance(m, nn.Linear):
+            nn.init.normal_(m.weight.data, 0.0, 0.02)
+        elif isinstance(m, nn.BatchNorm2d):
+            nn.init.normal_(m.weight.data, 1.0, 0.02)
+            nn.init.constant_(m.bias.data, 0)
+
+    net.apply(init_weights)
     return net
 
 
-def define_G(input_nc, output_nc, ngf, netG, use_dropout=False, gpu_ids=[]):
+def define_G(input_nc, output_nc, ngf, netG, use_dropout=False):
     if netG == 'unet_128':
         net = UNet(input_nc, output_nc, 7, ngf, dropout=use_dropout)
     elif netG == 'unet_256':
         net = UNet(input_nc, output_nc, 8, ngf, dropout=use_dropout)
     else:
         raise NotImplementedError('Generator model name [%s] is not recognized' % netG)
-    return init_net(net, gpu_ids)
+    return init_net(net)
 
 
-def define_D(input_nc, ndf, gpu_ids=[]):
+def define_D(input_nc, ndf):
     net = PatchGAN(input_nc, ndf, layers=3)
-    return init_net(net, gpu_ids)
+    return init_net(net)
 
 
 def define_loss(gan_mode: str, device):

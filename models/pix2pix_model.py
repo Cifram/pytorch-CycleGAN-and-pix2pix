@@ -53,10 +53,10 @@ class Pix2PixModel(BaseModel):
         else:  # during test time, only load G
             self.model_names = ['G']
         # define networks (both generator and discriminator)
-        self.netG = networks.define_G(opt.input_nc, opt.output_nc, opt.ngf, opt.netG, not opt.no_dropout, self.gpu_ids)
+        self.netG = networks.init_net(networks.UNet(opt.input_nc, opt.output_nc, 8, opt.ngf, not opt.no_dropout).to(self.device))
 
         if self.isTrain:  # define a discriminator; conditional GANs need to take both input and output images; Therefore, #channels for D is input_nc + output_nc
-            self.netD = networks.define_D(opt.input_nc + opt.output_nc, opt.ndf, self.gpu_ids)
+            self.netD = networks.init_net(networks.PatchGAN(opt.input_nc + opt.output_nc, opt.ndf).to(self.device))
 
         if self.isTrain:
             # define loss functions
