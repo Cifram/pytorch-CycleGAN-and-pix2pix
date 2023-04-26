@@ -1,72 +1,89 @@
 import os
 import numpy as np
+from collections import OrderedDict
 import torch
 from torch import Tensor
 import cv2
-from .base_model import BaseModel
 from . import networks
 
 
-class Pix2PixModel(BaseModel):
-    """ This class implements the pix2pix model, for learning a mapping from input images to output images given paired data.
-
-    The model training requires '--dataset_mode aligned' dataset.
-    By default, it uses a '--netG unet256' U-Net generator,
-    and a '--gan_mode' BCE GAN loss (the cross-entropy objective used in the orignal GAN paper).
-
-    pix2pix paper: https://arxiv.org/pdf/1611.07004.pdf
-    """
-
+class Pix2PixModel:
     def __init__(self, opt, val_dataloader):
-        """Initialize the pix2pix class.
+        self.opt = opt
+        self.isTrain = opt.isTrain
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.save_dir = os.path.join(opt.checkpoints_dir, opt.name)
+        torch.backends.cudnn.benchmark = True
+        self.image_paths = []
+        self.metric = 0
 
-        Parameters:
-            opt (Option class)-- stores all the experiment flags; needs to be a subclass of BaseOptions
-        """
-        BaseModel.__init__(self, opt)
         self.val_dataloader = val_dataloader
         self.output_dir = os.path.join(opt.checkpoints_dir, opt.name, 'output')
-        # specify the training losses you want to print out. The training/test scripts will call <BaseModel.get_current_losses>
         self.loss_names = ['G_GAN', 'G_L1', 'D_real', 'D_fake']
-        # specify the images you want to save/display. The training/test scripts will call <BaseModel.get_current_visuals>
         self.visual_names = ['real_A', 'fake_B', 'real_B']
-        # specify the models you want to save to the disk. The training/test scripts will call <BaseModel.save_networks> and <BaseModel.load_networks>
-        if self.isTrain:
-            self.model_names = ['G', 'D']
-        else:  # during test time, only load G
-            self.model_names = ['G']
-        # define networks (both generator and discriminator)
         self.netG = networks.init_net(networks.UNet(opt.input_nc, opt.output_nc, 8, opt.ngf, not opt.no_dropout).to(self.device))
 
-        if self.isTrain:  # define a discriminator; conditional GANs need to take both input and output images; Therefore, #channels for D is input_nc + output_nc
-            self.netD = networks.init_net(networks.PatchGAN(opt.input_nc + opt.output_nc, opt.ndf).to(self.device))
-
         if self.isTrain:
-            # define loss functions
+            self.netD = networks.init_net(networks.PatchGAN(opt.input_nc + opt.output_nc, opt.ndf).to(self.device))
             self.criterionGAN = networks.define_loss(opt.gan_mode, self.device)
             self.criterionL1 = torch.nn.L1Loss()
-            # initialize optimizers; schedulers will be automatically created by function <BaseModel.setup>.
             self.optimizer_G = torch.optim.Adam(self.netG.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
             self.optimizer_D = torch.optim.Adam(self.netD.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
-            self.optimizers.append(self.optimizer_G)
-            self.optimizers.append(self.optimizer_D)
+            self.optimizers = [self.optimizer_D, self.optimizer_G]
+            self.models = [(self.netD, "discriminator"), (self.netG, "generator")]
+            self.schedulers = [networks.get_scheduler(optimizer, opt) for optimizer in self.optimizers]
+        else:
+            self.optimizers = []
+            self.models = [(self.netG, "generator")]
+
+        if not self.isTrain or opt.continue_train:
+            load_suffix = 'iter_%d' % opt.load_iter if opt.load_iter > 0 else opt.epoch
+            self.load_networks(load_suffix)
+
+    def update_learning_rate(self):
+        old_lr = self.optimizers[0].param_groups[0]['lr']
+        for scheduler in self.schedulers:
+            if self.opt.lr_policy == 'plateau':
+                scheduler.step(self.metric)
+            else:
+                scheduler.step()
+
+        lr = self.optimizers[0].param_groups[0]['lr']
+        print(f"learning rate {old_lr:.7f} -> {lr:.7f}")
+
+    def get_current_losses(self):
+        errors_ret = OrderedDict()
+        for name in self.loss_names:
+            errors_ret[name] = float(getattr(self, 'loss_' + name))
+        return errors_ret
+
+    def save_networks(self, epoch):
+        for (net, name) in self.models:
+            save_filename = f"{epoch}_net_{name}.pth"
+            save_path = os.path.join(self.save_dir, save_filename)
+            torch.save(net.state_dict(), save_path)
+
+    def load_networks(self, epoch):
+        for (net, name) in self.models:
+            load_filename = f"{epoch}_net_{name}.pth"
+            load_path = os.path.join(self.save_dir, load_filename)
+            net = getattr(self, 'net' + name)
+            if isinstance(net, torch.nn.DataParallel):
+                net = net.module
+            print(f"loading the model from {load_path}")
+            state_dict = torch.load(load_path, map_location=self.device)
+            if hasattr(state_dict, '_metadata'):
+                del state_dict._metadata
+            net.load_state_dict(state_dict)
 
     def set_input(self, input):
-        """Unpack input data from the dataloader and perform necessary pre-processing steps.
-
-        Parameters:
-            input (dict): include the data itself and its metadata information.
-
-        The option 'direction' can be used to swap images in domain A and domain B.
-        """
         AtoB = self.opt.direction == 'AtoB'
         self.real_A = input['A' if AtoB else 'B'].to(self.device)
         self.real_B = input['B' if AtoB else 'A'].to(self.device)
         self.image_paths = input['A_paths' if AtoB else 'B_paths']
 
     def forward(self):
-        """Run forward pass; called by both functions <optimize_parameters> and <test>."""
-        self.fake_B = self.netG(self.real_A)  # G(A)
+        self.fake_B = self.netG(self.real_A)
 
     def update_discriminator(self, fake_img: Tensor, input_img: Tensor, target_img: Tensor) -> None:
         for param in self.netD.parameters():
