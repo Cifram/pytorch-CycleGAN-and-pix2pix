@@ -19,6 +19,7 @@ See training and test tips at: https://github.com/junyanz/pytorch-CycleGAN-and-p
 See frequently asked questions at: https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix/blob/master/docs/qa.md
 """
 import time
+from tqdm import tqdm
 from options.train_options import TrainOptions
 from data import create_dataset
 from models.pix2pix_model import Pix2PixModel
@@ -40,27 +41,20 @@ if __name__ == '__main__':
         epoch_iter = 0                  # the number of training iterations in current epoch, reset to 0 every epoch
         visualizer.reset()              # reset the visualizer: make sure it saves the results to HTML at least once every epoch
         model.update_learning_rate()    # update learning rates in the beginning of every epoch.
-        for i, data in enumerate(train_data):  # inner loop within one epoch
+        iter = tqdm(train_data, f"Epoch {epoch}", total=len(train_data), leave=False)
+        for i, data in enumerate(iter):  # inner loop within one epoch
             iter_start_time = time.time()  # timer for computation per iteration
-            if total_iters % opt.print_freq == 0:
-                t_data = iter_start_time - iter_data_time
 
             total_iters += opt.batch_size
             epoch_iter += opt.batch_size
             model.set_input(data)         # unpack data from dataset and apply preprocessing
             model.optimize_parameters()   # calculate loss functions, get gradients, update network weights
 
-            if total_iters % opt.print_freq == 0:    # print training losses and save logging information to the disk
-                losses = model.get_current_losses()
-                t_comp = (time.time() - iter_start_time) / opt.batch_size
-                visualizer.print_current_losses(epoch, epoch_iter, losses, t_comp, t_data)
+            t_data = time.time() - iter_start_time
 
-            if total_iters % opt.save_latest_freq == 0:   # cache our latest model every <save_latest_freq> iterations
-                print('saving the latest model (epoch %d, total_iters %d)' % (epoch, total_iters))
-                save_suffix = 'iter_%d' % total_iters if opt.save_by_iter else 'latest'
-                model.save_networks(save_suffix)
-
-            iter_data_time = time.time()
+        losses = model.get_current_losses()
+        t_comp = (time.time() - iter_start_time) / opt.batch_size
+        visualizer.print_current_losses(epoch, epoch_iter, losses, t_comp, t_data)
 
         # save images to a HTML file
         save_result = total_iters % opt.update_html_freq == 0
